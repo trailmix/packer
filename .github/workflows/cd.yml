@@ -20,20 +20,8 @@ on:
 env:
   VERSION: ${{inputs.VERSION}}
 jobs:
-  base:
-    uses: ./.github/workflows/bake.yml
-    with:
-      target: base
-      arch: ${{ inputs.platforms }}
-      meta: meta-${{inputs.VERSION}}
-      set: |
-        all-arch.platform=${{ inputs.platforms }}
-        *.cache-from=type=gha,scope=${{ github.ref_name }}-src-${{inputs.SRC}}
-        *.cache-from=type=gha,scope=${{ github.ref_name }}-base-${{inputs.VERSION}}
-        *.cache-to=type=gha,mode=max,scope=${{ github.ref_name }}-base-${{inputs.VERSION}}
   dist:
     uses: ./.github/workflows/bake.yml
-    needs: [base]
     with:
       runs-on: self-hosted
       target: dist
@@ -41,7 +29,7 @@ jobs:
       meta: meta-${{inputs.VERSION}}
       set: |
         all-arch.platform=${{ inputs.platforms }}
-        *.cache-from=type=gha,scope=${{ github.ref_name }}-base-${{inputs.VERSION}}
+        *.cache-from=type=gha,scope=${{ github.ref_name }}-src-${{inputs.SRC}}
         *.cache-from=type=gha,scope=${{ github.ref_name }}-${{inputs.VERSION}}
         *.cache-to=type=gha,mode=max,scope=${{ github.ref_name }}-${{inputs.VERSION}}
         *.output=
