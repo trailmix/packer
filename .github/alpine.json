@@ -1,0 +1,13 @@
+[
+  {
+    "version": "3.17",
+    "digest": "124c7d2707904eea7431fffe91522a01e5a861a624ee31d03372cc1d138a3126",
+    "platforms": "linux/amd64,linux/arm64,linux/arm/v6,linux/arm/v7,linux/s390x,linux/ppc64le",
+    "latest": true
+  },
+  {
+    "version": "3.16",
+    "digest": "c2b622f6e510a0d25bccaffa9e67b75a6860cb09b74bb58cfc36a9ef4331109f",
+    "platforms": "linux/amd64,linux/arm64,linux/arm/v6,linux/arm/v7,linux/s390x,linux/ppc64le"
+  }
+]

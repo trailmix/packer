@@ -1,0 +1,77 @@
+name: meta
+on:
+  workflow_call:
+    inputs:
+      PACKER_VERSION:
+        description: Packer Version eg 1.8.6
+        default: "1.8.6"
+        type: string
+      ALPINE_VERSION:
+        description: Alpine Version eg 3.17
+        default: "3.17"
+        type: string
+      ALPINE_DIGEST:
+        description: Alpine container digest sha
+        default: ""
+        type: string
+      GO_VERSION:
+        description: Go release version
+        default: ""
+        type: string
+      VERSION:
+        description: Full release version
+        default: ""
+        type: string
+      LATEST:
+        description: Is this the latest release(tags)?
+        default: false
+        type: boolean
+      LATEST_ALPINE:
+        description: Is this the latest alpine?
+        default: false
+        type: boolean
+env:
+  PACKER_VERSION: ${{inputs.PACKER_VERSION}}
+  ALPINE_VERSION: ${{inputs.ALPINE_VERSION}}
+  ALPINE_DIGEST: ${{inputs.ALPINE_DIGEST}}
+  GO_VERSION: ${{inputs.GO_VERSION}}
+  VERSION: ${{inputs.VERSION}}
+  LATEST: ${{inputs.LATEST}}
+  LATEST_ALPINE: ${{inputs.LATEST_ALPINE}}
+jobs:
+  meta:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: |
+            docker.io/${{ github.repository }}
+          flavor: |
+            latest=${{ inputs.LATEST }}
+          tags: |
+            type=schedule
+            type=ref,event=pr,prefix=${{inputs.VERSION}}-
+            type=raw,value=${{inputs.VERSION}}
+            type=semver,pattern={{version}},enable=${{ inputs.LATEST_ALPINE }},value=${{inputs.PACKER_VERSION}}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ inputs.LATEST_ALPINE }},value=${{inputs.PACKER_VERSION}}
+            type=semver,pattern={{version}},enable=${{ inputs.LATEST_ALPINE }},value=${{inputs.PACKER_VERSION}},suffix=-alpine
+            type=semver,pattern={{major}}.{{minor}},enable=${{ inputs.LATEST_ALPINE }},value=${{inputs.PACKER_VERSION}},suffix=-alpine
+            type=semver,pattern={{version}},enable=${{ inputs.LATEST_ALPINE && inputs.GO_VERSION != '' }},value=${{inputs.PACKER_VERSION}},suffix=-alpine-${{inputs.GO_VERSION}}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ inputs.LATEST_ALPINE && inputs.GO_VERSION != '' }},value=${{inputs.PACKER_VERSION}},suffix=-alpine-${{inputs.GO_VERSION}}
+      - run: |
+          cat > env.hcl <<EOF
+            DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            PACKER_VERSION="${{inputs.PACKER_VERSION}}"
+            ALPINE_VERSION="${{inputs.ALPINE_VERSION}}"
+            ALPINE_DIGEST="${{inputs.ALPINE_DIGEST}}"
+            GO_VERSION="${{inputs.GO_VERSION}}"
+          EOF
+          cp ${{ steps.meta.outputs.bake-file }} bake.json
+      - uses: actions/upload-artifact@v3
+        with:
+          name: meta-${{inputs.VERSION}}
+          path: |
+            env.hcl
+            bake.json

@@ -1,0 +1,80 @@
+name: Release
+on:
+  push:
+    branches:
+      - master
+      - develop
+  pull_request:
+    branches:
+      - master
+      - develop
+      - feature/*
+      - workflow/*
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    name: Prepare matrix
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      src_matrix: ${{ steps.matrix.outputs.src_matrix }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: set matrix vars
+        id: matrix
+        run: |
+          # get packer version from hashicorp
+          CURRENT_PACKER_VERSION=`curl -s https://checkpoint-api.hashicorp.com/v1/check/packer | jq -e '.current_version'`
+          # get latest alpine version for tagging
+          CURRENT_ALPINE_VERSION=`cat .github/alpine.json | jq -c '.[] | select(.latest==true).version'`
+          # get list of packer versions, adding the current version
+          PACKER_VERSIONS=`printf '['$CURRENT_PACKER_VERSION']\n'$(cat .github/packer.json | jq -c ) | jq -sc 'add|unique'`
+          ALPINE_VERSIONS=`cat .github/alpine.json | jq -c`
+          GO_VERSIONS=`cat .github/go.json | jq -c`
+          FULL_MATRIX=`echo '{"include":[{"latest":true,"packer":'$CURRENT_PACKER_VERSION',"alpine":{"version":'$CURRENT_ALPINE_VERSION'},"go":""}],"packer":'$PACKER_VERSIONS',"go":'$GO_VERSIONS',"alpine":'$ALPINE_VERSIONS',"current_alpine":['$CURRENT_ALPINE_VERSION']}'`
+          SRC_MATRIX=`echo $FULL_MATRIX | jq -ec 'del(.alpine) | del(.include[] | select(.latest==true).alpine)'`
+          echo 'matrix='$FULL_MATRIX >> "$GITHUB_OUTPUT"
+          echo 'src_matrix='$SRC_MATRIX >> "$GITHUB_OUTPUT"
+  meta:
+    needs: [matrix]
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrix.outputs.matrix) }}
+    uses: ./.github/workflows/meta.yml
+    name: ${{ matrix.packer }}-alpine${{ matrix.alpine.version }}${{ matrix.go == '' && ' ' || format('-{0}', matrix.go) }}
+    with:
+      PACKER_VERSION: ${{ matrix.packer }}
+      ALPINE_VERSION: ${{ matrix.alpine.version }}
+      ALPINE_DIGEST: ${{ matrix.alpine.digest }}
+      GO_VERSION: ${{ matrix.go }}
+      VERSION: ${{ matrix.packer }}-alpine${{ matrix.alpine.version }}${{ matrix.go == '' && ' ' || format('-{0}', matrix.go) }}
+      LATEST: ${{ matrix.latest == true && github.ref_name == 'master' }}
+      LATEST_ALPINE: ${{ matrix.alpine.latest == true }}
+  source:
+    needs: [matrix, meta]
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrix.outputs.src_matrix) }}
+    uses: ./.github/workflows/bake.yml
+    name: ${{ matrix.packer }}-alpine${{ matrix.current_alpine }}${{ matrix.go == '' && ' ' || format('-{0}', matrix.go) }}
+    with:
+      target: src
+      meta: meta-${{ matrix.packer }}-alpine${{ matrix.current_alpine }}${{ matrix.go == '' && ' ' || format('-{0}', matrix.go) }}
+      set: |
+        *.cache-from=type=gha,scope=${{ github.ref_name }}-src-${{ matrix.packer }}${{ matrix.go == '' && ' ' || format('-{0}', matrix.go) }}
+        *.cache-to=type=gha,mode=max,scope=${{ github.ref_name }}-src-${{ matrix.packer }}${{ matrix.go == '' && ' ' || format('-{0}', matrix.go) }}
+  build-all:
+    needs: [matrix, meta, source]
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrix.outputs.matrix) }}
+    uses: ./.github/workflows/cd.yml
+    name: ${{ matrix.packer }}-alpine${{ matrix.alpine.version }}${{ matrix.go == '' && ' ' || format('-{0}', matrix.go) }}
+    secrets:
+      DOCKER_TOKEN: ${{ secrets.DOCKER_TOKEN_TRILOM }}
+    permissions:
+      packages: write
+      contents: read
+    with:
+      platforms: ${{ matrix.alpine.platforms }}
+      VERSION: ${{ matrix.packer }}-alpine${{ matrix.alpine.version }}${{ matrix.go == '' && ' ' || format('-{0}', matrix.go) }}
+      SRC: ${{ matrix.packer }}${{ matrix.go == '' && ' ' || format('-{0}', matrix.go) }}

@@ -1,0 +1,81 @@
+name: CD
+on:
+  workflow_call:
+    secrets:
+      DOCKER_TOKEN:
+        required: false
+    inputs:
+      platforms:
+        description: "Which platform/arches to build?"
+        default: "linux/amd64,linux/arm64"
+        type: string
+      VERSION:
+        description: Full release version
+        default: ""
+        type: string
+      SRC:
+        description: Src version for cache
+        default: ""
+        type: string
+env:
+  VERSION: ${{inputs.VERSION}}
+jobs:
+  base:
+    uses: ./.github/workflows/bake.yml
+    with:
+      target: base
+      arch: ${{ inputs.platforms }}
+      meta: meta-${{inputs.VERSION}}
+      set: |
+        all-arch.platform=${{ inputs.platforms }}
+        *.cache-from=type=gha,scope=${{ github.ref_name }}-src-${{inputs.SRC}}
+        *.cache-from=type=gha,scope=${{ github.ref_name }}-base-${{inputs.VERSION}}
+        *.cache-to=type=gha,mode=max,scope=${{ github.ref_name }}-base-${{inputs.VERSION}}
+  dist:
+    uses: ./.github/workflows/bake.yml
+    needs: [base]
+    with:
+      runs-on: self-hosted
+      target: dist
+      arch: ${{ inputs.platforms }}
+      meta: meta-${{inputs.VERSION}}
+      set: |
+        all-arch.platform=${{ inputs.platforms }}
+        *.cache-from=type=gha,scope=${{ github.ref_name }}-base-${{inputs.VERSION}}
+        *.cache-from=type=gha,scope=${{ github.ref_name }}-${{inputs.VERSION}}
+        *.cache-to=type=gha,mode=max,scope=${{ github.ref_name }}-${{inputs.VERSION}}
+        *.output=
+  test-all:
+    strategy:
+      fail-fast: false
+      matrix:
+        test: ["alpine-packer-test"]
+    uses: ./.github/workflows/bake.yml
+    needs: [dist]
+    with:
+      target: ${{ matrix.test }}
+      arch: ${{ inputs.platforms }}
+      meta: meta-${{ inputs.VERSION }}
+      set: |
+        all-arch.platform=${{ inputs.platforms }}
+        *.cache-from=type=gha,scope=${{ github.ref_name }}-${{inputs.VERSION}}
+        *.cache-to=
+  release:
+    uses: ./.github/workflows/bake.yml
+    if: contains(join(needs.*.result,','), 'success')
+    needs: [test-all]
+    secrets:
+      DOCKER_TOKEN: ${{ secrets.DOCKER_TOKEN }}
+    permissions:
+      packages: write
+      contents: read
+    with:
+      target: release
+      label: released-docker-gh
+      push: true
+      arch: ${{ inputs.platforms }}
+      meta: meta-${{inputs.VERSION}}
+      set: |
+        all-arch.platform=${{ inputs.platforms }}
+        *.cache-from=type=gha,scope=${{ github.ref_name }}-${{inputs.VERSION}}
+        *.cache-to=
